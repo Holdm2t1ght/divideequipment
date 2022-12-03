@@ -1,0 +1,5 @@
+classes = 5
+train = data/safetyequipment/safetyequipment_train.txt
+valid = data/safetyequipment/safetyequipment_valid.txt
+names = data/safetyequipment/safetyequipment.names
+backup = backup/
