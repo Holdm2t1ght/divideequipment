@@ -140,8 +140,7 @@
             cout << "연산 속도: " << ms << endl;
             net.forward(detections, output_names);
           }
-       ```
-       
+       ```       
 ### 객체 탐지 함수</br>
   * 예측된 객체의 정보(바운딩 박스의 중심축, 크기, 클래스 신뢰도)를 vector에 저장함 
   
@@ -169,5 +168,94 @@
                 }
               }
             }
+          }
+       ```
+### 안전 장비 분류 함수</br>
+  * Person 클래스가 검출되면 클래스의 바운딩 박스 안에 있는 안전 장비를 파악하여 Person 바운딩 박스의 색을 변경함 
+  
+       ```c++ 
+          void divide()
+          {
+            vector<string> class_names = { "person","helmet", "vest", "boots", "glove" };
+            for (int c = 0; c < NUM_CLASSES; c++)
+              NMSBoxes(boxes[c], scores[c], 0.0, NMS_THRESHOLD, indices[c]);
+            wear = 1;
+
+            for (int c = 0; c < NUM_CLASSES; c++)
+            {
+              for (int i = 0; i < indices[c].size(); ++i)
+              {
+                auto idx = indices[c][i];
+                const auto& rect = boxes[c][idx];
+                if (c == 0)
+                {
+                  int n = 0;//기본 빨강색
+                  bool equipment[4] = { 0,0,0,0 };
+                  bool important = 0;
+                  for (int d = 1; d < NUM_CLASSES; d++)
+                  {
+                    for (int j = 0; j < indices[d].size(); ++j)
+                    {
+                      auto idx_equip = indices[d][j];
+                      const auto& rect_equip = boxes[d][idx_equip];
+                      int x = rect_equip.x + (rect_equip.width / 2);
+                      int y = rect_equip.y + (rect_equip.height / 2);
+                      if (x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height)
+                        equipment[d - 1] = true;//각각의 장비가 있으면 true로 표시
+                    }
+                  }
+                  if (equipment[0] && equipment[1]) {//안전모, 안전조끼 둘 다 있으면 important[1] = true;
+                    important = true;
+                  }
+                  else wear = 0;
+
+                  if (important)//안전모와 조끼가 있을 때
+                  {
+                    if (equipment[2] && equipment[3]) n = 3;//장갑, 장화 둘 다 있으면 초록
+                    else if (equipment[2] || equipment[3]) n = 2;//장갑, 장화 둘 중 하나만 있으면 핑크
+                    else n = 1;//장갑, 장화 둘 다 없으면 주황
+                  }//안전모와 조끼 중 하나라도 없으면 빨강
+
+                  rectangle(frame, Point(rect.x, rect.y), Point(rect.x + rect.width, rect.y + rect.height),colors[n], 2);
+                  string label_str = class_names[c] + ": " + format("%.02lf", scores[c][idx]);
+                  int baseline;
+                  auto label_bg_sz = getTextSize(label_str, FONT_HERSHEY_PLAIN, 1, 2, &baseline);
+                  rectangle(frame, Point(rect.x, rect.y - label_bg_sz.height - baseline), Point(rect.x + label_bg_sz.width, rect.y), colors[n], FILLED);
+                  putText(frame, label_str, Point(rect.x, rect.y - baseline), FONT_HERSHEY_PLAIN, 1, Scalar(0, 0, 0));
+                }
+              }
+            }
+          }
+       ```
+### 화면 출력 함수</br>
+  * time_h 객체를 선언한 후 출력되는 화면에 현재 시간을 함께  
+  
+       ```c++ 
+          void print()//화면 출력 함수
+          {
+            time_t timer;
+            struct tm* t;
+            timer = time(NULL); // 1970년 1월 1일 0시 0분 0초부터 시작하여 현재까지의 초
+            t = localtime(&timer);
+            string cur_time = to_string(t->tm_year + 1900) + "." + to_string(t->tm_mon + 1) + "."
+              + to_string(t->tm_mday) + " " + to_string(t->tm_hour) + ":" + to_string(t->tm_min) + ":" + to_string(t->tm_sec);
+            int baseline;
+            auto time_sz = getTextSize(cur_time, FONT_HERSHEY_PLAIN, 1, 1, &baseline);
+            rectangle(frame, Point(0, 0), Point(0 + time_sz.width, time_sz.height + 5), Scalar(140,140,140), FILLED);
+            putText(frame, cur_time, Point(0, time_sz.height +2), FONT_HERSHEY_PLAIN, 1, Scalar(255, 255, 255));
+            imshow("output", frame);
+          }
+       ```
+### 촬영 함수 함수</br>
+  * 현재 출력된 화면을 폴더에 저장함  
+  
+       ```c++ 
+          void cheese()
+          {
+            static int cnt = 0;
+            vector<int> params;
+            params.push_back(IMWRITE_JPEG_QUALITY);
+            params.push_back(95);
+            imwrite(to_string(cnt++)+".JPG", frame, params);
           }
        ```
