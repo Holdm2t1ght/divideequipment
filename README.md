@@ -51,73 +51,123 @@
 <!-------------------------------------------------------------Part 2------------------------------------------------------------------------------------------>
 
  ## 2. 코드 설명
- ### 입실 버튼 부분</br>
-  * 다음과 같은 코드로 서버에 저장되어 있는 좌석을 키오스크에서 판별함  
+ ### 메인 외 선언</br>
+  * 여러 함수들에서 사용해야 하는 것들과 포함해야 되는 것들을 외부에 선언해 줌
   
-       ```python
-        conn = mc.connect(host=host, user=username, password=password, db=database, charset='utf8', port=port1)
-        cur = conn.cursor()
-        sql = "SELECT 좌석유무 FROM 테스트 WHERE 좌석번호 = %s"
+       ```c++
+          #define _CRT_SECURE_NO_WARNINGS
+          #include <iostream>
+          #include <opencv2/opencv.hpp>
+          #include <ctime>
+          using namespace std;
+          using namespace cv;
+          using namespace cv::dnn;
+          const float CONFIDENCE_THRESHOLD = 0.5;
+          const float NMS_THRESHOLD = 0.5;
+          const int NUM_CLASSES = 5;
+          const Scalar colors[] = {
+            {0, 0, 255},{0, 94, 255}, {166,97,243},{22, 219, 29}};//바운딩 박스를 그릴 빨강, 주황, 핑크, 초록 색상
+          Mat frame, blob;
+          vector<Mat> detections;
+          vector<int> indices[NUM_CLASSES];
+          vector<Rect> boxes[NUM_CLASSES];
+          vector<float> scores[NUM_CLASSES];
+          bool wear;
 
-        with conn:
-            with conn.cursor() as cur:
-                cur.execute(sql, (1,))  # n번 좌석의 좌석유무 확인
-                result = cur.fetchall()
-
-                for data in result:
-                    if data == ('유',):
-                        self.pButton_1.setText("1번 좌석\n사용중")
-                        self.pButton_1.setStyleSheet("background-color: gainsboro")
-                        self.pButton_1.setDisabled(True)
-                    if data == ('무',):
-                        self.pButton_1.setText("1번 좌석")
-                        self.pButton_1.setStyleSheet("background-color:#eb9f9f")  # 기본 회색
-                        self.pButton_1.clicked.connect(self.whktjr1)
-             ..........
-
-        def whktjr1(self):
-             text1='1'
-             self.sw=time_1(text1,'1')  # 시간제 선택 윈도우에 좌석 정보 보냄
-             self.sw.exec_()
-             self.hide() 
-             self.second = time_1()  # 시간제 선택 윈도우로 전환 
-             self.second.exec() 
-             self.showMaximized()  
+          void trainandpredict();
+          void findClass();
+          void divide();
+          void print();
+          void cheese();
+ 
 
        ```
-### 시간제 선택 부분</br>
-  * 다음과 같은 코드로 선택된 아이템에 대한 시간과 가격을 계산함
+### 메인 함수</br>
+  * 카메라 입력을 받아오는 것과 블롭화, 딜레이 기능을 제외한 기능을 함수로 선언해 줌
   
-       ```python 
-        def item_clicked(self, item):
-          self.item_selected.append(item)
-          self.item_show()
-          totaltime = int(self.totaltime.text())
-          total = int(self.totalPrice.text())
-
-          self.totaltime.setText(str(totaltime + ITEM_INFO[self.item_selected[-1]]['time']))
-          self.totalPrice.setText(str(total + ITEM_INFO[self.item_selected[-1]]['price']))
+       ```c++ 
+          int main()
+          {
+             VideoCapture cap(0);
+             if (!cap.isOpened()) {
+               cerr << "Camera open failed!" << endl;
+               return -1;
+             }
+             TickMeter tm;
+             while (true) {
+               static double ms = 0;
+               static bool first = false;
+               tm.start();
+               
+               cap >> frame;
+               if(frame.empty()) break;
+               blobFromImage(frame, blob, 1 / 255.f, Size(320, 320), Scalar(), true, false, CV_32F);
+               trainandpredict();//학습 및 추론
+               findClass();//객체 검출
+               divide();//색상 분류
+               print();//출력
+               if(!wear) {
+                 if(!first) { cheese(); ms = 0;	first = true; }
+                 else {
+                   if (ms > 60) { cheese(); ms = 0; }
+                 }
+                }//사진이 찍히면 타이머 0으로 초기화
+               tm.stop();
+               ms += tm.getTimeSec();//사진이 찍힌 후 시간 계산
+               tm.reset();
+               if (waitKey(1) == 27) break;
+              }
+              
+            return 0;
+          }
        ```
-   * 다음과 같은 코드로 좌석, 총 결제금액, 총 시간을 '결제 부분'으로 보냄  
+### 학습 및 추론 함수</br>
+  * 앞서 학습된 데이터로 추론하고 TickMeter를 이용하여 추론 시간을 측정한 후 출력함 
   
-       ```python 
-        def item_pay(self):
-           global pay_success
-           #self.hide()
-           paytime=int(self.totaltime.text())
-           payprice =int(self.totalPrice.text())
-           text1= int(self.label_s.text())
+       ```c++ 
+          void trainandpredict()
+          {
+            TickMeter tm;
+            auto net = readNetFromDarknet("yolov4-safetyequipment.cfg", "yolov4-safetyequipment_final.weights");
+            net.setPreferableBackend(DNN_BACKEND_OPENCV);
+            net.setPreferableTarget(DNN_TARGET_CPU);
+            auto output_names = net.getUnconnectedOutLayersNames();
 
-           if self.label_5.text() == '1':
-               self.payto = paytoWindow(payprice,paytime,text1)
-               self.payto.exec()
-               pay_success = False
-           elif self.label_5.text() == '2':
-               self.exto = paytoex(payprice,paytime,text1)
-               self.exto.exec()
-               pay_success = False
-
-          if pay_success:
-              self.item_clearall()
-          self.show()
+            tm.start();
+            net.setInput(blob);
+            tm.stop();
+            double ms = tm.getTimeMilli();
+            cout << "연산 속도: " << ms << endl;
+            net.forward(detections, output_names);
+          }
+       ```
+       
+### 객체 탐지 함수</br>
+  * 예측된 객체의 정보(바운딩 박스의 중심축, 크기, 클래스 신뢰도)를 vector에 저장함 
+  
+       ```c++ 
+          void findClass()
+          {
+            for (auto& output : detections)
+            {
+              const auto num_boxes = output.rows;
+              for (int i = 0; i < num_boxes; i++)
+              {
+                auto x = output.at<float>(i, 0) * frame.cols;
+                auto y = output.at<float>(i, 1) * frame.rows;
+                auto width = output.at<float>(i, 2) * frame.cols;
+                auto height = output.at<float>(i, 3) * frame.rows;
+                Rect rect(x - width / 2, y - height / 2, width, height);
+                for (int c = 0; c < NUM_CLASSES; c++)
+                {
+                  auto confidence = *output.ptr<float>(i, 5 + c);
+                  if (confidence >= CONFIDENCE_THRESHOLD)
+                  {
+                    boxes[c].push_back(rect);
+                    scores[c].push_back(confidence);
+                  }
+                }
+              }
+            }
+          }
        ```
